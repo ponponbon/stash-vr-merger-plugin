@@ -1,0 +1,41 @@
+name: VR Video Merger
+description: Automatically merges multipart VR videos and applies VR and Multipart tags
+version: 1.0.0
+url: https://github.com/stashapp/CommunityScripts
+
+# Plugin settings that can be configured in the UI
+settings:
+  vr_tag_name:
+    displayName: VR Tag Name
+    description: Name of the VR tag to apply to merged videos
+    type: STRING
+  multipart_tag_name:
+    displayName: Multipart Tag Name
+    description: Name of the Multipart tag to apply to merged videos
+    type: STRING
+  dry_run:
+    displayName: Dry Run Mode
+    description: When enabled, shows what would be done without making changes
+    type: BOOLEAN
+
+# External script execution configuration
+exec:
+  - python
+  - "{pluginDir}/merge_multipart_vr.py"
+
+# Interface type for communication with the script
+interface: raw
+
+# Error logging level
+errLog: info
+
+# Task definitions
+tasks:
+  - name: merge_vr_videos
+    description: Scan for multipart VR videos and merge them automatically
+    defaultArgs:
+      mode: "merge"
+  - name: preview_vr_merge
+    description: Preview what VR videos would be merged (dry run mode)
+    defaultArgs:
+      mode: "preview"
