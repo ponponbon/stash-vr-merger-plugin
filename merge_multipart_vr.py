@@ -24,17 +24,46 @@ def get_plugin_input():
             "args": {}
         }
 
-def get_stash_url(server_connection):
-    """Build Stash URL from server connection info"""
-    scheme = server_connection.get("Scheme", "http")
-    port = server_connection.get("Port", 9999)
-    return f"{scheme}://localhost:{port}/graphql"
+def normalize_graphql_url(url):
+    """Normalize URL to ensure it ends with /graphql"""
+    if not url:
+        return url
+    url = url.rstrip('/')
+    if not url.endswith('/graphql'):
+        url += '/graphql'
+    return url
+
+def get_stash_url(plugin_input, server_connection):
+    """Build Stash URL with proper fallback priority"""
+    # Priority 1: Plugin args (stash_url setting)
+    args = plugin_input.get("args", {})
+    if "stash_url" in args and args["stash_url"]:
+        url = normalize_graphql_url(args["stash_url"])
+        return url, "plugin arg"
+    
+    # Priority 2: Environment variable STASH_URL
+    env_url = os.environ.get("STASH_URL")
+    if env_url:
+        url = normalize_graphql_url(env_url)
+        return url, "environment variable"
+    
+    # Priority 3: Auto-build from server_connection
+    if server_connection:
+        scheme = server_connection.get("Scheme", "http")
+        host = server_connection.get("Host", "localhost")
+        port = server_connection.get("Port", 9999)
+        url = f"{scheme}://{host}:{port}/graphql"
+        return url, "server_connection"
+    
+    # Priority 4: Final fallback to localhost
+    url = "http://localhost:9999/graphql"
+    return url, "localhost fallback"
 
 def get_plugin_setting(plugin_input, setting_name, default_value):
     """Get plugin setting value with fallback to environment variable and default"""
     # Try plugin args first
     args = plugin_input.get("args", {})
-    if setting_name in args:
+    if setting_name in args and args[setting_name] is not None:
         return args[setting_name]
     
     # Try environment variable
@@ -44,6 +73,42 @@ def get_plugin_setting(plugin_input, setting_name, default_value):
         return env_value
     
     return default_value
+
+def test_graphql_connection(session, url):
+    """Test GraphQL connection and return Stash version info"""
+    test_query = """
+    query {
+      version {
+        version
+        build_time
+      }
+    }"""
+    
+    try:
+        data = {"query": test_query}
+        resp = session.post(url, data=json.dumps(data), timeout=10)
+        resp.raise_for_status()
+        
+        result = resp.json()
+        if "errors" in result:
+            return False, f"GraphQL errors: {result['errors']}"
+        
+        version_info = result.get("data", {}).get("version", {})
+        version = version_info.get("version", "unknown")
+        build_time = version_info.get("build_time", "unknown")
+        
+        return True, f"Stash v{version} (built: {build_time})"
+        
+    except requests.exceptions.Timeout:
+        return False, "Connection timeout (10s)"
+    except requests.exceptions.ConnectionError:
+        return False, "Connection refused - check URL and network"
+    except requests.exceptions.HTTPError as e:
+        return False, f"HTTP {e.response.status_code}: {e.response.reason}"
+    except json.JSONDecodeError:
+        return False, "Invalid JSON response - not a GraphQL endpoint"
+    except Exception as e:
+        return False, f"Unexpected error: {str(e)}"
 
 def output_result(error=None, output=None):
     """Output plugin result in expected format"""
@@ -59,10 +124,11 @@ plugin_input = get_plugin_input()
 server_connection = plugin_input.get("server_connection", {})
 args = plugin_input.get("args", {})
 
-STASH_URL = get_stash_url(server_connection)
-API_KEY = os.environ.get("STASH_API_KEY", "")
+STASH_URL, URL_SOURCE = get_stash_url(plugin_input, server_connection)
+API_KEY = get_plugin_setting(plugin_input, "api_key", os.environ.get("STASH_API_KEY", ""))
 VR_TAG_NAME = get_plugin_setting(plugin_input, "vr_tag_name", "VR")
 MULTIPART_TAG_NAME = get_plugin_setting(plugin_input, "multipart_tag_name", "Multipart")
+TEST_CONNECTION = get_plugin_setting(plugin_input, "test_connection", "false").lower() == "true"
 
 # Check if this is preview mode
 mode = args.get("mode", "merge")
@@ -72,15 +138,16 @@ SESSION = requests.Session()
 if API_KEY:
     SESSION.headers.update({"ApiKey": API_KEY})
 
-# Handle session cookie if provided
-session_cookie = server_connection.get("SessionCookie")
-if session_cookie:
-    SESSION.cookies.set(
-        session_cookie.get("Name", "session"),
-        session_cookie.get("Value", ""),
-        domain=session_cookie.get("Domain", "localhost"),
-        path=session_cookie.get("Path", "/")
-    )
+# Handle session cookie if provided (fallback when no API key)
+if not API_KEY:
+    session_cookie = server_connection.get("SessionCookie")
+    if session_cookie:
+        SESSION.cookies.set(
+            session_cookie.get("Name", "session"),
+            session_cookie.get("Value", ""),
+            domain=session_cookie.get("Domain", "localhost"),
+            path=session_cookie.get("Path", "/")
+        )
 
 SESSION.headers.update({"Content-Type": "application/json"})
 
@@ -217,7 +284,20 @@ def scene_merge(target_id: str, source_ids: List[str]):
 def main():
     try:
         print("== Merge Multipart VR Scenes ==")
-        print(f"GraphQL: {STASH_URL}  DRY_RUN={DRY_RUN}")
+        print(f"Using GraphQL endpoint: {STASH_URL} (source: {URL_SOURCE})")
+        print(f"DRY_RUN={DRY_RUN}")
+        
+        # Test connection if requested
+        if TEST_CONNECTION:
+            print("Testing GraphQL connection...")
+            success, message = test_graphql_connection(SESSION, STASH_URL)
+            if success:
+                print(f"✓ Connection successful: {message}")
+            else:
+                error_msg = f"✗ Connection failed: {message}"
+                print(error_msg)
+                output_result(error=error_msg)
+                return
         
         vr_tag_id = get_or_create_tag(VR_TAG_NAME) if VR_TAG_NAME else None
         mp_tag_id = get_or_create_tag(MULTIPART_TAG_NAME)

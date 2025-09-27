@@ -1,10 +1,18 @@
 name: VR Video Merger
 description: Automatically merges multipart VR videos and applies VR and Multipart tags
 version: 1.0.0
-url: https://github.com/ponponbon/stash-vr-merger-plugin
+url: https://github.com/stashapp/CommunityScripts
 
 # Plugin settings that can be configured in the UI
 settings:
+  stash_url:
+    displayName: Stash GraphQL URL
+    description: Full URL to Stash GraphQL endpoint (e.g., https://stash.example.com/graphql). Leave empty to auto-detect.
+    type: STRING
+  api_key:
+    displayName: API Key
+    description: Stash API key for authentication. Leave empty to use session cookie.
+    type: STRING
   vr_tag_name:
     displayName: VR Tag Name
     description: Name of the VR tag to apply to merged videos
@@ -16,6 +24,10 @@ settings:
   dry_run:
     displayName: Dry Run Mode
     description: When enabled, shows what would be done without making changes
+    type: BOOLEAN
+  test_connection:
+    displayName: Test Connection
+    description: Test GraphQL connection before running merge operations
     type: BOOLEAN
 
 # External script execution configuration
@@ -39,4 +51,3 @@ tasks:
     description: Preview what VR videos would be merged (dry run mode)
     defaultArgs:
       mode: "preview"
-
