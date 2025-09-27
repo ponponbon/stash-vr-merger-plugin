@@ -1,7 +1,7 @@
 name: VR Video Merger
 description: Automatically merges multipart VR videos and applies VR and Multipart tags
 version: 1.0.0
-url: https://github.com/stashapp/CommunityScripts
+url: https://github.com/ponponbon/stash-vr-merger-plugin
 
 # Plugin settings that can be configured in the UI
 settings:
@@ -39,3 +39,4 @@ tasks:
     description: Preview what VR videos would be merged (dry run mode)
     defaultArgs:
       mode: "preview"
+
