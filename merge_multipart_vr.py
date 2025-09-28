@@ -218,19 +218,21 @@ def gql(query: str, variables: Dict[str, Any] = None) -> Dict[str, Any]:
 def get_or_create_tag(name: str) -> str:
     # Try find by name
     q = """
-    query($q: String!) {
-      allTags(filter: {q: $q}) { id name }
+    query FindTags($filter: FindFilterType!) {
+      findTags(filter: $filter) {
+        tags { id name }
+      }
     }"""
-    data = gql(q, {"q": name})
-    for t in data["allTags"]:
+    data = gql(q, {"filter": {"q": name, "per_page": 100}})
+    for t in data["findTags"]["tags"]:
         if t["name"].lower() == name.lower():
             return t["id"]
     # Create
     m = """
-    mutation($name: String!) {
-      tagCreate(input: { name: $name }) { id name }
+    mutation CreateTag($input: TagCreateInput!) {
+      tagCreate(input: $input) { id name }
     }"""
-    created = gql(m, {"name": name})["tagCreate"]
+    created = gql(m, {"input": {"name": name}})["tagCreate"]
     return created["id"]
 
 def fetch_scenes_page(page: int, per_page: int = 200) -> Tuple[int, List[Dict[str, Any]]]:
@@ -251,35 +253,35 @@ def fetch_scenes_page(page: int, per_page: int = 200) -> Tuple[int, List[Dict[st
 
 def scene_update_tags(scene_id: str, tag_ids: List[str]):
     m = """
-    mutation($id: ID!, $tag_ids: [ID!]) {
-      sceneUpdate(input: { id: $id, tag_ids: $tag_ids }) { id }
+    mutation UpdateSceneTags($input: SceneUpdateInput!) {
+      sceneUpdate(input: $input) { id }
     }"""
     if DRY_RUN:
         print(f"[DRY] sceneUpdate tags for {scene_id}: {tag_ids}")
         return
-    gql(m, {"id": scene_id, "tag_ids": tag_ids})
+    gql(m, {"input": {"id": scene_id, "tag_ids": tag_ids}})
 
 def scene_update_title(scene_id: str, title: str):
     m = """
-    mutation($id: ID!, $title: String) {
-      sceneUpdate(input: { id: $id, title: $title }) { id }
+    mutation UpdateSceneTitle($input: SceneUpdateInput!) {
+      sceneUpdate(input: $input) { id }
     }"""
     if DRY_RUN:
         print(f"[DRY] sceneUpdate title for {scene_id}: {title!r}")
         return
-    gql(m, {"id": scene_id, "title": title})
+    gql(m, {"input": {"id": scene_id, "title": title}})
 
 def scene_merge(target_id: str, source_ids: List[str]):
     if not source_ids:
         return
     m = """
-    mutation($target: ID!, $source: [ID!]!) {
-      sceneMerge(target: $target, source: $source) { id }
+    mutation MergeScenes($input: SceneMergeInput!) {
+      sceneMerge(input: $input) { id }
     }"""
     if DRY_RUN:
         print(f"[DRY] sceneMerge target={target_id} sources={source_ids}")
         return
-    gql(m, {"target": target_id, "source": source_ids})
+    gql(m, {"input": {"destination": target_id, "source": source_ids}})
 
 def main():
     try:
