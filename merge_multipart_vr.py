@@ -128,11 +128,18 @@ STASH_URL, URL_SOURCE = get_stash_url(plugin_input, server_connection)
 API_KEY = get_plugin_setting(plugin_input, "api_key", os.environ.get("STASH_API_KEY", ""))
 VR_TAG_NAME = get_plugin_setting(plugin_input, "vr_tag_name", "VR")
 MULTIPART_TAG_NAME = get_plugin_setting(plugin_input, "multipart_tag_name", "Multipart")
-TEST_CONNECTION = get_plugin_setting(plugin_input, "test_connection", "false").lower() == "true"
 
 # Check if this is preview mode
 mode = args.get("mode", "merge")
 DRY_RUN = (mode == "preview") or (get_plugin_setting(plugin_input, "dry_run", "false").lower() == "true")
+
+# Collect log messages for output
+LOG_MESSAGES = []
+
+def log_info(message):
+    """Log message both to console and collect for plugin output"""
+    print(message)
+    LOG_MESSAGES.append(message)
 
 SESSION = requests.Session()
 if API_KEY:
@@ -257,7 +264,7 @@ def scene_update_tags(scene_id: str, tag_ids: List[str]):
       sceneUpdate(input: $input) { id }
     }"""
     if DRY_RUN:
-        print(f"[DRY] sceneUpdate tags for {scene_id}: {tag_ids}")
+        log_info(f"[DRY] sceneUpdate tags for {scene_id}: {tag_ids}")
         return
     gql(m, {"input": {"id": scene_id, "tag_ids": tag_ids}})
 
@@ -267,7 +274,7 @@ def scene_update_title(scene_id: str, title: str):
       sceneUpdate(input: $input) { id }
     }"""
     if DRY_RUN:
-        print(f"[DRY] sceneUpdate title for {scene_id}: {title!r}")
+        log_info(f"[DRY] sceneUpdate title for {scene_id}: {title!r}")
         return
     gql(m, {"input": {"id": scene_id, "title": title}})
 
@@ -279,27 +286,15 @@ def scene_merge(target_id: str, source_ids: List[str]):
       sceneMerge(input: $input) { id }
     }"""
     if DRY_RUN:
-        print(f"[DRY] sceneMerge target={target_id} sources={source_ids}")
+        log_info(f"[DRY] sceneMerge target={target_id} sources={source_ids}")
         return
     gql(m, {"input": {"destination": target_id, "source": source_ids}})
 
 def main():
     try:
-        print("== Merge Multipart VR Scenes ==")
-        print(f"Using GraphQL endpoint: {STASH_URL} (source: {URL_SOURCE})")
-        print(f"DRY_RUN={DRY_RUN}")
-        
-        # Test connection if requested
-        if TEST_CONNECTION:
-            print("Testing GraphQL connection...")
-            success, message = test_graphql_connection(SESSION, STASH_URL)
-            if success:
-                print(f"✓ Connection successful: {message}")
-            else:
-                error_msg = f"✗ Connection failed: {message}"
-                print(error_msg)
-                output_result(error=error_msg)
-                return
+        log_info("== Merge Multipart VR Scenes ==")
+        log_info(f"Using GraphQL endpoint: {STASH_URL} (source: {URL_SOURCE})")
+        log_info(f"DRY_RUN={DRY_RUN}")
         
         vr_tag_id = get_or_create_tag(VR_TAG_NAME) if VR_TAG_NAME else None
         mp_tag_id = get_or_create_tag(MULTIPART_TAG_NAME)
@@ -359,8 +354,8 @@ def main():
             }
             merge_summary.append(merge_info)
             
-            print(f"\nGroup: {dirpath} :: {base}  -> parts {[it['part'] for it in items]}")
-            print(f"Scenes: {scene_ids}")
+            log_info(f"\nGroup: {dirpath} :: {base}  -> parts {[it['part'] for it in items]}")
+            log_info(f"Scenes: {scene_ids}")
             
             # Choose target: the lowest part number scene
             target = items[0]["scene"]
@@ -384,19 +379,20 @@ def main():
                 scene_update_title(target["id"], new_title)
 
         result_message = f"Done. Groups merged: {merged_count}"
-        print(f"\n{result_message}")
+        log_info(f"\n{result_message}")
         
         if DRY_RUN:
             dry_run_msg = "DRY_RUN was ON. Use 'merge_vr_videos' task to apply changes."
-            print(dry_run_msg)
+            log_info(dry_run_msg)
             result_message += f"\n{dry_run_msg}"
 
-        # Output plugin result
+        # Output plugin result with log messages
         output_result(output={
             "message": result_message,
             "merged_count": merged_count,
             "merge_summary": merge_summary,
-            "dry_run": DRY_RUN
+            "dry_run": DRY_RUN,
+            "log_messages": LOG_MESSAGES
         })
 
     except requests.HTTPError as e:
